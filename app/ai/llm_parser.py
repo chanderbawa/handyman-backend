@@ -1,11 +1,18 @@
 """
 LLM Integration for parsing vague user requests
 Uses OpenAI GPT-4 to parse natural language into structured job tickets
+
+NOTE: OpenAI dependency is optional. If not available, returns basic parsing.
 """
-import openai
 from typing import List, Dict
 import json
 import logging
+
+try:
+    import openai
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
 
 from app.config import settings
 from app.models.job import JobType
@@ -20,8 +27,12 @@ class JobParser:
     
     def __init__(self):
         """Initialize OpenAI client"""
-        openai.api_key = settings.OPENAI_API_KEY
-        self.model = settings.OPENAI_MODEL
+        self.openai_enabled = OPENAI_AVAILABLE and hasattr(settings, 'OPENAI_API_KEY') and settings.OPENAI_API_KEY
+        if self.openai_enabled:
+            openai.api_key = settings.OPENAI_API_KEY
+            self.model = settings.OPENAI_MODEL
+        else:
+            logger.warning("OpenAI not available - using basic job parsing")
     
     async def parse_job_request(self, user_input: str) -> List[Dict[str, any]]:
         """
@@ -40,6 +51,10 @@ class JobParser:
         Returns:
             List of job ticket dictionaries
         """
+        # Use basic parsing if OpenAI not available
+        if not self.openai_enabled:
+            return self._basic_parse(user_input)
+        
         try:
             system_prompt = """You are a helpful assistant that parses home service requests.
 Given a user's description, extract individual job tasks and classify them.
@@ -145,6 +160,30 @@ Return only the enhanced description, no additional commentary."""
         except Exception as e:
             logger.error(f"Error enhancing description: {e}")
             return brief_description
+    
+    def _basic_parse(self, user_input: str) -> List[Dict[str, any]]:
+        """
+        Basic keyword-based parsing when OpenAI is not available
+        """
+        user_input_lower = user_input.lower()
+        
+        # Simple keyword matching
+        if any(word in user_input_lower for word in ['snow', 'shovel', 'plow', 'ice']):
+            job_type = JobType.SNOW_REMOVAL
+            title = "Snow Removal Service"
+        elif any(word in user_input_lower for word in ['lawn', 'mow', 'grass', 'leaves', 'rake', 'hedge']):
+            job_type = JobType.LAWN_CARE
+            title = "Lawn Care Service"
+        else:
+            job_type = JobType.HANDYMAN
+            title = "Handyman Service"
+        
+        return [{
+            "job_type": job_type.value,
+            "title": title,
+            "description": user_input,
+            "estimated_duration_hours": 2
+        }]
 
 
 # Singleton instance

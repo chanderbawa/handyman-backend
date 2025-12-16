@@ -1,0 +1,12 @@
+# AI/ML Dependencies - Optional (install locally for development)
+# These are LARGE and not needed for basic API functionality
+
+torch==2.1.2
+torchvision==0.16.2
+transformers==4.37.2
+openai==1.10.0
+opencv-python==4.9.0.80
+pillow==10.2.0
+numpy==1.26.3
+pytesseract==0.3.10
+redis==5.0.1

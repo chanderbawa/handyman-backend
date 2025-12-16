@@ -2,15 +2,25 @@
 Computer Vision Module for Image Analysis
 Uses transfer learning with pre-trained models (ResNet, EfficientNet, or Mask R-CNN)
 to estimate square footage and severity from uploaded images
+
+NOTE: AI dependencies are optional. If not installed, returns mock data.
 """
-import torch
-import torchvision.transforms as transforms
-from torchvision.models import resnet50, ResNet50_Weights
-from PIL import Image
-import cv2
-import numpy as np
 from typing import Dict, Tuple, List
 import logging
+
+# Try to import AI dependencies (optional)
+try:
+    import torch
+    import torchvision.transforms as transforms
+    from torchvision.models import resnet50, ResNet50_Weights
+    from PIL import Image
+    import cv2
+    import numpy as np
+    AI_AVAILABLE = True
+except ImportError:
+    AI_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.warning("AI dependencies not installed. Using mock image analysis.")
 
 from app.models.job import SeverityLevel, JobType
 
@@ -25,21 +35,26 @@ class ImageAnalyzer:
     
     def __init__(self):
         """Initialize the model and transformations"""
-        # Load pre-trained ResNet50
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        logger.info(f"Using device: {self.device}")
+        self.ai_enabled = AI_AVAILABLE
         
-        # Load pre-trained model
-        self.model = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)
-        self.model = self.model.to(self.device)
-        self.model.eval()
-        
-        # Image preprocessing
-        self.transform = transforms.Compose([
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        ])
+        if self.ai_enabled:
+            # Load pre-trained ResNet50
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            logger.info(f"Using device: {self.device}")
+            
+            # Load pre-trained model
+            self.model = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)
+            self.model = self.model.to(self.device)
+            self.model.eval()
+            
+            # Image preprocessing
+            self.transform = transforms.Compose([
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            ])
+        else:
+            logger.warning("AI model not initialized - AI dependencies not available")
         
         # Scaling factors for square footage estimation (simplified heuristic)
         # In production, this would be replaced with a fine-tuned model
@@ -64,6 +79,10 @@ class ImageAnalyzer:
         Returns:
             Dictionary with analysis results
         """
+        # Return mock data if AI not available
+        if not self.ai_enabled:
+            return self._mock_analysis(job_type)
+        
         try:
             # Load and preprocess image
             image = Image.open(image_path).convert('RGB')
@@ -225,6 +244,46 @@ class ImageAnalyzer:
         }
         
         return object_categories.get(job_type, ["general"])
+    
+    def _mock_analysis(self, job_type: JobType) -> Dict[str, any]:
+        """
+        Return mock analysis when AI dependencies are not available
+        """
+        mock_data = {
+            JobType.SNOW_REMOVAL: {
+                "estimated_square_footage": 500.0,
+                "severity": SeverityLevel.MODERATE,
+                "confidence": 0.7,
+                "detected_objects": ["driveway", "sidewalk"],
+            },
+            JobType.LAWN_CARE: {
+                "estimated_square_footage": 750.0,
+                "severity": SeverityLevel.LIGHT,
+                "confidence": 0.7,
+                "detected_objects": ["lawn", "grass"],
+            },
+            JobType.HANDYMAN: {
+                "estimated_square_footage": 200.0,
+                "severity": SeverityLevel.MODERATE,
+                "confidence": 0.7,
+                "detected_objects": ["general"],
+            },
+        }
+        
+        base_result = mock_data.get(job_type, {
+            "estimated_square_footage": 400.0,
+            "severity": SeverityLevel.MODERATE,
+            "confidence": 0.7,
+            "detected_objects": ["general"],
+        })
+        
+        base_result["metadata"] = {
+            "image_dimensions": (1920, 1080),
+            "job_type": job_type.value,
+            "mock_data": True
+        }
+        
+        return base_result
 
 
 # Singleton instance
